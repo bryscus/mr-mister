@@ -56,8 +56,8 @@
 #define SSIDPWD         "Password"
 #define TZ              -5          // (utc+) TZ in hours
 #define DST_MN          60          // use 60mn for summer time in some countries
-#define LAT             26.899078   // Local latitude for sun calculations
-#define LON             -80.164002  // Local longitude for sun calculations
+#define LAT             26.843501   // Local latitude for sun calculations
+#define LON             -80.082038  // Local longitude for sun calculations
 #define MORN_DELAY_S    0           // Time to wait after sunrise
 #define NUM_RELAYS      4      
 
