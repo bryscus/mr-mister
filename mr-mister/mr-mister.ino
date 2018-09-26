@@ -19,6 +19,28 @@
 #include <coredecls.h>                  // settimeofday_cb()
 #include <Dusk2Dawn.h>                  // calculates sunrise/sunset
 
+#define RELAY_ON    1
+#define RELAY_OFF   0
+
+//#define PRINT
+#define RELAY_CMD
+
+#ifdef PRINT
+ #define PRINTF(x)  Serial.print (x)
+ #define PRINTLN(x)  Serial.println (x)
+#else
+ #define PRINTF(x)
+ #define PRINTLN(x)
+#endif
+
+#ifdef RELAY_CMD
+ #define SERIAL_CMD(x)  Serial.write (x)
+ #define SERIAL_FLUSH(x)   Serial.flush (x)
+#else
+ #define SERIAL_CMD(x)
+ #define SERIAL_FLUSH(x)
+#endif
+
 ////////////////////////////////////////////////////////
 //// ONE TIME CONFIGURATION PARAMETERS /////////////////
 
@@ -28,17 +50,14 @@
 #define DST_MN          60          // use 60mn for summer time in some countries
 #define LAT             26.899078   // Local latitude for sun calculations
 #define LON             -80.164002  // Local longitude for sun calculations
-#define MORN_DELAY_S    0           // Time to wait after sunrise      
+#define MORN_DELAY_S    0           // Time to wait after sunrise
+#define NUM_RELAYS      4      
 
 ////////////////////////////////////////////////////////
 //// TO BE CONVERTED TO RUNTIME ////////////////////////
 
-#define NUM_CHANNELS        1     //Number of channels
 #define CHAN_1_RUNLENGTH_S  10    //Length of spray
 #define CHAN_1_INTERVAL_S   60    //Interval to wait between sprays
-#define CHAN_1_PIN          2     //Pin to drive for channel 1
-#define CHAN_1_EN           LOW   //Enable state
-#define CHAN_1_DIS          HIGH  //Disable state
 
 ////////////////////////////////////////////////////////
 
@@ -54,15 +73,16 @@ Dusk2Dawn location(LAT, LON, TZ);
 void time_is_set(void) {
   gettimeofday(&cbtime, NULL);
   cbtime_set = true;
-  Serial.println("------------------ settimeofday() was called ------------------");
+  PRINTLN("------------------ settimeofday() was called ------------------");
 }
 
 void setup() {
   
   Serial.begin(115200);
   delay(3000);  //Delay to allow catching AP connection in terminal
-  pinMode(CHAN_1_PIN, OUTPUT);
-  digitalWrite(CHAN_1_PIN, CHAN_1_DIS);
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH); //Turn LED OFF
+  SetAllRelays(RELAY_OFF);
 
   settimeofday_cb(time_is_set);
 
@@ -71,14 +91,14 @@ void setup() {
   WiFi.begin(SSID, SSIDPWD);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
-    Serial.print(".");
+    PRINTF(".");
   }
-  Serial.println("");
-  Serial.print("Connected to ");
-  Serial.println(SSID);
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
-  Serial.println("Setup done");
+  PRINTLN("");
+  PRINTF("Connected to ");
+  PRINTLN(SSID);
+  PRINTF("IP address: ");
+  PRINTLN(WiFi.localIP());
+  PRINTLN("Setup done");
   // don't wait, observe time changing when ntp timestamp is received
 }
 
@@ -86,18 +106,18 @@ void setup() {
 extern "C" int clock_gettime(clockid_t unused, struct timespec *tp);
 
 #define PTM(w) \
-  Serial.print(":" #w "="); \
-  Serial.print(tm->tm_##w);
+  PRINTF(":" #w "="); \
+  PRINTF(tm->tm_##w);
 
 void printTm(const char* what, const tm* tm) {
-  Serial.print(what);
+  PRINTF(what);
   PTM(isdst); PTM(yday); PTM(wday);
   PTM(year);  PTM(mon);  PTM(mday);
   PTM(hour);  PTM(min);  PTM(sec);
 }
 
 void printTmShort(const char* what, const tm* tm) {
-  Serial.print(what);
+  PRINTF(what);
   PTM(year+1900);  PTM(mon+1);  PTM(mday);
   PTM(hour);  PTM(min);  PTM(sec);
 }
@@ -133,17 +153,17 @@ void loop() {
 
     //Calculate midnight to create offset for today
     midnight = (time_t)(now_s - (now_hour_s + now_min_s + now_sec));
-    Serial.print("Midnight:");
-    Serial.print((uint32_t)midnight);
+    PRINTF("Midnight:");
+    PRINTF((uint32_t)midnight);
     printTmShort(" Midnight Time", localtime(&midnight));
-    Serial.println("");
+    PRINTLN("");
 
     //Calculate sunrise and sunset
     sunrise_s  = 60 * location.sunrise(tm->tm_year+1900, tm->tm_mon+1, tm->tm_mday, true);
     sunset_s   = 60 * location.sunset(tm->tm_year+1900, tm->tm_mon+1, tm->tm_mday, true);
     sunrise_t = midnight+(time_t)sunrise_s;
     sunset_t = midnight+(time_t)sunset_s;
-    Serial.println("Recalculated Sunrise/Sunset");
+    PRINTLN("Recalculated Sunrise/Sunset");
     starttime_s = sunrise_s + MORN_DELAY_S;
 
     //If new boot, set to current time; else, sunrise + offset
@@ -151,45 +171,47 @@ void loop() {
       runstart_s = (uint32_t)now - (uint32_t)midnight;
     else
       runstart_s = starttime_s;
-    Serial.print("---- Initial runstart_s :");
-    Serial.println(runstart_s);
+    PRINTF("---- Initial runstart_s :");
+    PRINTLN(runstart_s);
     this_day = tm->tm_yday;
   }
+
+  //Calculate the number of seconds so far today
+  today_s = (uint32_t)now - (uint32_t)midnight;
 
   //Print human readable time figures every 5 seconds
   if(five_sec_flag){
     tm = localtime(&now);
 
-    Serial.print("DoY:");
-    Serial.print(tm->tm_yday);
-    Serial.print(" DoM:");
-    Serial.print(tm->tm_mday);
-    Serial.print(" MoY+1:");
-    Serial.print(tm->tm_mon+1);
-    Serial.print(" Y+1900:");
-    Serial.print(tm->tm_year+1900);
-    Serial.print(" Time:");
-    Serial.print(tm->tm_hour);
-    Serial.print(":");
-    Serial.print(tm->tm_min);
-    Serial.print(":");
-    Serial.println(tm->tm_sec);
+    PRINTF("Today's:");
+    PRINTF(today_s);
+    PRINTF(" DoY:");
+    PRINTF(tm->tm_yday);
+    PRINTF(" DoM:");
+    PRINTF(tm->tm_mday);
+    PRINTF(" MoY+1:");
+    PRINTF(tm->tm_mon+1);
+    PRINTF(" Y+1900:");
+    PRINTF(tm->tm_year+1900);
+    PRINTF(" Time:");
+    PRINTF(tm->tm_hour);
+    PRINTF(":");
+    PRINTF(tm->tm_min);
+    PRINTF(":");
+    PRINTLN(tm->tm_sec);
 
     //Print calculated sunrise
-    Serial.print("Sunrise:");
-    Serial.print(sunrise_s);
+    PRINTF("Sunrise:");
+    PRINTF(sunrise_s);
     printTmShort("   Sunrise", localtime(&sunrise_t));
-    Serial.println();
+    PRINTLN();
     
     //Print calculated sunset
-    Serial.print("Sunset :");
-    Serial.print(sunset_s);
+    PRINTF("Sunset :");
+    PRINTF(sunset_s);
     printTmShort("    Sunset", localtime(&sunset_t));
-    Serial.println();
+    PRINTLN();
   }
-
-  //Calculate the number of seconds so far today
-  today_s = (uint32_t)now - (uint32_t)midnight;
 
   //Guts for running solenoid
   //Should eventually be a class
@@ -197,18 +219,18 @@ void loop() {
   {
     if(chan_1_time_flag){
       chan_1_time_flag = false;
-      Serial.print("---- Sun is Up! Today's Seconds: ");
-      Serial.println(today_s);
+      PRINTF("---- Sun is Up! Today's Seconds: ");
+      PRINTLN(today_s);
     }
 
     //Run solenoid during calculated period
     if((today_s >= runstart_s) && (today_s < (runstart_s + CHAN_1_RUNLENGTH_S))){
       if(chan_1_msg_flag){
         chan_1_msg_flag = false;
-        Serial.print("---- Running: ");
-        Serial.println(today_s);
+        PRINTF("---- Running: ");
+        PRINTLN(today_s);
       }
-      digitalWrite(CHAN_1_PIN, CHAN_1_EN);
+      SetRelay(1, RELAY_ON);
     }
     else {
       //Calculate new start time for solenoid
@@ -216,13 +238,44 @@ void loop() {
         chan_1_msg_flag = true;
         chan_1_time_flag = true;
         runstart_s += CHAN_1_INTERVAL_S;
-        Serial.print("---- New runstart_s: ");
-        Serial.println(runstart_s);
+        PRINTF("---- New runstart_s: ");
+        PRINTLN(runstart_s);
       }
-      digitalWrite(CHAN_1_PIN, CHAN_1_DIS);
+      SetRelay(1, RELAY_OFF);
     }
   }
 
   //Reset flag
   five_sec_flag = false;
+}
+
+void SetRelay(char relay_num, char state){
+
+  if((relay_num == 0) || (relay_num > NUM_RELAYS))
+    return;
+    
+  state = state &1;
+  if(state)
+    digitalWrite(LED_BUILTIN, LOW); //Turn LED ON
+  else
+    digitalWrite(LED_BUILTIN, HIGH); //Turn LED OFF
+  
+  SERIAL_CMD(0xA0);
+  SERIAL_CMD(relay_num);
+  SERIAL_CMD(state);
+  SERIAL_CMD(0xA0+relay_num+state);
+  SERIAL_FLUSH();
+  delay(20);
+  
+}
+
+void SetAllRelays(char state){
+
+  char i;
+  state = state &1;
+  
+  for(i = 1; i <= NUM_RELAYS; i++){
+    SetRelay(i, state);
+    delay(20);
+  }
 }
