@@ -1,29 +1,37 @@
 /*
-  NTP-TZ-DST
-  NetWork Time Protocol - Time Zone - Daylight Saving Time
+  mr-mister.ino - Mr. Mister irrigation control software for LCTECH ESP boards
 
-  This example shows how to read and set time,
-  and how to use NTP (set NTP0_OR_LOCAL1 to 0 below)
-  or an external RTC (set NTP0_OR_LOCAL1 to 1 below)
+  Copyright (C) 2018  Bryce Barbato and Jim Donelson
 
-  TZ and DST below have to be manually set
-  according to your local settings.
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
 
-  This example code is in the public domain.
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include <ESP8266WiFi.h>
 #include <time.h>                       // time() ctime()
-#include <Time.h>                       // time() ctime()
 #include <sys/time.h>                   // struct timeval
 #include <coredecls.h>                  // settimeofday_cb()
 #include <Dusk2Dawn.h>                  // calculates sunrise/sunset
+#include "mmr_version.h"                // version information
 
 #define RELAY_ON    1
 #define RELAY_OFF   0
 
-//#define PRINT
-#define RELAY_CMD
+//Since console and relay control both use the UART,
+//pick only one of the two options below.  In order to
+//debug, uncomment PRINT.  To run, uncomment RELAY_CMD
+#define PRINT
+//#define RELAY_CMD
 
 #ifdef PRINT
  #define PRINTF(x)  Serial.print (x)
@@ -83,6 +91,8 @@ void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH); //Turn LED OFF
   SetAllRelays(RELAY_OFF);
+
+  PrintVersion();
 
   settimeofday_cb(time_is_set);
 
@@ -278,4 +288,17 @@ void SetAllRelays(char state){
     SetRelay(i, state);
     delay(20);
   }
+}
+
+void PrintVersion(){
+
+  PRINTF("Version: ");
+  PRINTF(MMR_MAJOR_V);
+  PRINTF(".");
+  PRINTF(MMR_MINOR_V);
+  PRINTF(".");
+  PRINTF(MMR_REVISION_V);
+  PRINTF(".");
+  PRINTLN(MMR_BUILD_V);
+  
 }
