@@ -20,13 +20,13 @@
 #ifndef _MMR_VERSION_H_
 #define _MMR_VERSION_H_
 
-#define     MMR_MAJOR_V     0
-#define     MMR_MINOR_V     0
-#define     MMR_REVISION_V  0
-#define     MMR_BUILD_V     1
+#define MMR_MAJOR_V       0
+#define MMR_MINOR_V       0
+#define MMR_REVISION_V    0
+#define MMR_BUILD_V       1
 
-#define D_PROGRAMNAME      "Mr. Mister"
-#define D_AUTHOR           "Barbato/Donelson"
-#define D_WEBLINK          "https://github.com/bryscus/mr-mister"
+#define MMR_PROGRAMNAME   "Mr. Mister"
+#define MMR_AUTHOR        "Barbato/Donelson"
+#define MMR_WEBLINK       "https://github.com/bryscus/mr-mister"
 
 #endif  // _MMR_VERSION_H_
