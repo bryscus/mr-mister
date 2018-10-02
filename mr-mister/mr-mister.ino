@@ -27,21 +27,25 @@
 #define RELAY_ON    1
 #define RELAY_OFF   0
 
-#define TEST_TIME
+//#define TEST_TIME
 #define TEST_CHAN
+#define TCPPRINT
 
 //Since console and relay control both use the UART,
 //pick only one of the two options below.  In order to
 //debug, uncomment PRINT.  To run, uncomment RELAY_CMD
-#ifdef TEST_CHAN
-  #define PRINT
+//#define RELAY_CMD
+#define PRINT_SERIAL
+
+#ifdef TCPPRINT
+  #define LOGPRINTF(x)  serverClient.print (x)
+  #define LOGPRINTLN(x)  serverClient.println (x)
 #else
-  #define RELAY_CMD
+  #define LOGPRINTF(x)  Serial.print (x)
+  #define LOGPRINTLN(x)  Serial.println (x)
 #endif
 
-//#define PRINT
-
-#ifdef PRINT
+#ifdef PRINT_SERIAL
  #define PRINTF(x)  Serial.print (x)
  #define PRINTLN(x)  Serial.println (x)
 #else
@@ -90,6 +94,10 @@ bool cbtime_set = false;
 
 Dusk2Dawn location(LAT, LON, TZ);
 
+// declare Telnet server (do NOT put in setup())
+WiFiServer telnetServer(23);
+WiFiClient serverClient;
+
 void time_is_set(void) {
   gettimeofday(&cbtime, NULL);
   cbtime_set = true;
@@ -103,8 +111,6 @@ void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH); //Turn LED OFF
   SetAllRelays(RELAY_OFF);
-
-  PrintVersion();
 
   settimeofday_cb(time_is_set);
 
@@ -122,14 +128,21 @@ void setup() {
   PRINTLN(WiFi.localIP());
   PRINTLN("Setup done");
   // don't wait, observe time changing when ntp timestamp is received
+
+  telnetServer.begin();
+  telnetServer.setNoDelay(true);
+
+  delay(20);
+
+  PrintVersion();
 }
 
 // for testing purpose:
 extern "C" int clock_gettime(clockid_t unused, struct timespec *tp);
 
 #define PTM(w) \
-  PRINTF(":" #w "="); \
-  PRINTF(tm->tm_##w);
+  LOGPRINTF(":" #w "="); \
+  LOGPRINTF(tm->tm_##w);
 
 void printTm(const char* what, const tm* tm) {
   PRINTF(what);
@@ -139,7 +152,7 @@ void printTm(const char* what, const tm* tm) {
 }
 
 void printTmShort(const char* what, const tm* tm) {
-  PRINTF(what);
+  LOGPRINTF(what);
   PTM(year+1900);  PTM(mon+1);  PTM(mday);
   PTM(hour);  PTM(min);  PTM(sec);
 }
@@ -158,6 +171,23 @@ bool five_sec_flag = true;
 uint32_t five_sec_timer = 0;
 
 void loop() {
+
+  if (telnetServer.hasClient()) {
+    if (!serverClient || !serverClient.connected()) {
+      if (serverClient) {
+        serverClient.stop();
+        Serial.println("Telnet Client Stop");
+      }
+      serverClient = telnetServer.available();
+      Serial.println("New Telnet client");
+      serverClient.flush();  // clear input buffer, else you get strange characters 
+    }
+  }
+
+  while(serverClient.available()) {  // get data from Client
+    Serial.write(serverClient.read());
+  }
+  
   //Read time figures
   now = time(nullptr);
   tm = localtime(&now);
@@ -165,7 +195,7 @@ void loop() {
   //Create five second interval timer for display
   if((uint32_t)now > five_sec_timer){
     five_sec_flag = true;
-    five_sec_timer = (uint32_t)now + 5;
+    five_sec_timer = (uint32_t)now + 15;
   }
   
   //Recalculate sunrise/sunset on new day
@@ -177,17 +207,17 @@ void loop() {
 
     //Calculate midnight to create offset for today
     midnight = (time_t)(now_s - (now_hour_s + now_min_s + now_sec));
-    PRINTF("Midnight:");
-    PRINTF((uint32_t)midnight);
+    LOGPRINTF("Midnight:");
+    LOGPRINTF((uint32_t)midnight);
     printTmShort(" Midnight Time", localtime(&midnight));
-    PRINTLN("");
+    LOGPRINTLN("");
 
     //Calculate sunrise and sunset
     sunrise_s  = 60 * location.sunrise(tm->tm_year+1900, tm->tm_mon+1, tm->tm_mday, true);
     sunset_s   = 60 * location.sunset(tm->tm_year+1900, tm->tm_mon+1, tm->tm_mday, true);
     sunrise_t = midnight+(time_t)sunrise_s;
     sunset_t = midnight+(time_t)sunset_s;
-    PRINTLN("Recalculated Sunrise/Sunset");
+    LOGPRINTLN("Recalculated Sunrise/Sunset");
     starttime_s = sunrise_s + MORN_DELAY_S;
 
     //If new boot, set to current time; else, sunrise + offset
@@ -199,50 +229,50 @@ void loop() {
       #endif
     else
       runstart1_s = starttime_s;
-    PRINTF("---- Initial runstart1_s :");
-    PRINTLN(runstart1_s);
+    LOGPRINTF("---- Initial runstart1_s :");
+    LOGPRINTLN(runstart1_s);
     this_day = tm->tm_yday;
   }
 
   //Calculate the number of seconds so far today
   #ifdef TEST_TIME
-  today_s = sunrise_s + CHAN_2_RUNSTART_S - 60 + millis()/1000;
+    today_s = sunrise_s + CHAN_2_RUNSTART_S - 60 + millis()/1000;
   #else
-  today_s = (uint32_t)now - (uint32_t)midnight;
+    today_s = (uint32_t)now - (uint32_t)midnight;
   #endif
 
   //Print human readable time figures every 5 seconds
   if(five_sec_flag){
     tm = localtime(&now);
 
-    PRINTF("Today's:");
-    PRINTF(today_s);
-    PRINTF(" DoY:");
-    PRINTF(tm->tm_yday);
-    PRINTF(" DoM:");
-    PRINTF(tm->tm_mday);
-    PRINTF(" MoY+1:");
-    PRINTF(tm->tm_mon+1);
-    PRINTF(" Y+1900:");
-    PRINTF(tm->tm_year+1900);
-    PRINTF(" Time:");
-    PRINTF(tm->tm_hour);
-    PRINTF(":");
-    PRINTF(tm->tm_min);
-    PRINTF(":");
-    PRINTLN(tm->tm_sec);
+    LOGPRINTF("Today's:");
+    LOGPRINTF(today_s);
+    LOGPRINTF(" DoY:");
+    LOGPRINTF(tm->tm_yday);
+    LOGPRINTF(" DoM:");
+    LOGPRINTF(tm->tm_mday);
+    LOGPRINTF(" MoY+1:");
+    LOGPRINTF(tm->tm_mon+1);
+    LOGPRINTF(" Y+1900:");
+    LOGPRINTF(tm->tm_year+1900);
+    LOGPRINTF(" Time:");
+    LOGPRINTF(tm->tm_hour);
+    LOGPRINTF(":");
+    LOGPRINTF(tm->tm_min);
+    LOGPRINTF(":");
+    LOGPRINTLN(tm->tm_sec);
 
     //Print calculated sunrise
-    PRINTF("Sunrise:");
-    PRINTF(sunrise_s);
+    LOGPRINTF("Sunrise:");
+    LOGPRINTF(sunrise_s);
     printTmShort("   Sunrise", localtime(&sunrise_t));
-    PRINTLN();
+    LOGPRINTLN();
     
     //Print calculated sunset
-    PRINTF("Sunset :");
-    PRINTF(sunset_s);
+    LOGPRINTF("Sunset :");
+    LOGPRINTF(sunset_s);
     printTmShort("    Sunset", localtime(&sunset_t));
-    PRINTLN();
+    LOGPRINTLN();
   }
 
   //Guts for running solenoid
@@ -251,16 +281,16 @@ void loop() {
   {
     if(chan_1_time_flag){
       chan_1_time_flag = false;
-      PRINTF("---- Sun is Up! Today's Seconds: ");
-      PRINTLN(today_s);
+      LOGPRINTF("---- Sun is Up! Today's Seconds: ");
+      LOGPRINTLN(today_s);
     }
 
     //Run solenoid 1 during calculated period
     if((today_s >= runstart1_s) && (today_s < (runstart1_s + CHAN_1_RUNLENGTH_S))){
       if(chan_1_msg_flag){
         chan_1_msg_flag = false;
-        PRINTF("---- CHAN_1: ON ");
-        PRINTLN(today_s);
+        LOGPRINTF("---- CHAN_1: ON ");
+        LOGPRINTLN(today_s);
       }
       SetRelay(1, RELAY_ON);
     }
@@ -270,10 +300,10 @@ void loop() {
         chan_1_msg_flag = true;
         chan_1_time_flag = true;
         runstart1_s += CHAN_1_INTERVAL_S;
-        PRINTF("---- CHAN_1: OFF ");
-        PRINTLN(today_s);
-        PRINTF("---- CHAN_1 NEWSTART: ");
-        PRINTLN(runstart1_s);
+        LOGPRINTF("---- CHAN_1: OFF ");
+        LOGPRINTLN(today_s);
+        LOGPRINTF("---- CHAN_1 NEWSTART: ");
+        LOGPRINTLN(runstart1_s);
       }
       SetRelay(1, RELAY_OFF);
     }
@@ -283,8 +313,8 @@ void loop() {
   if((today_s >= sunrise_s + CHAN_2_RUNSTART_S) && (today_s < (sunrise_s + CHAN_2_RUNSTART_S + CHAN_2_RUNLENGTH_S))){
     if(chan_2_msg_flag){
       chan_2_msg_flag = false;
-      PRINTF("---- CHAN_2: ON ");
-      PRINTLN(today_s);
+      LOGPRINTF("---- CHAN_2: ON ");
+      LOGPRINTLN(today_s);
     }
     SetRelay(2, RELAY_ON);
   }
@@ -293,8 +323,8 @@ void loop() {
     if(today_s >= (sunrise_s + CHAN_2_RUNSTART_S + CHAN_2_RUNLENGTH_S)){
       if(!chan_2_msg_flag){      
         chan_2_msg_flag = true;
-        PRINTF("---- CHAN_2: OFF ");
-        PRINTLN(today_s);
+        LOGPRINTF("---- CHAN_2: OFF ");
+        LOGPRINTLN(today_s);
       }
     SetRelay(2, RELAY_OFF);
     }
@@ -304,8 +334,8 @@ void loop() {
   if((today_s >= sunrise_s + CHAN_3_RUNSTART_S) && (today_s < (sunrise_s + CHAN_3_RUNSTART_S + CHAN_3_RUNLENGTH_S))){
     if(chan_3_msg_flag){
       chan_3_msg_flag = false;
-      PRINTF("---- CHAN_3: ON ");
-      PRINTLN(today_s);
+      LOGPRINTF("---- CHAN_3: ON ");
+      LOGPRINTLN(today_s);
     }
     SetRelay(3, RELAY_ON);
   }
@@ -314,8 +344,8 @@ void loop() {
     if(today_s >= (sunrise_s + CHAN_3_RUNSTART_S + CHAN_3_RUNLENGTH_S)){
       if(!chan_3_msg_flag){      
         chan_3_msg_flag = true;
-        PRINTF("---- CHAN_3: OFF ");
-        PRINTLN(today_s);
+        LOGPRINTF("---- CHAN_3: OFF ");
+        LOGPRINTLN(today_s);
       }
     SetRelay(3, RELAY_OFF);
     }
@@ -358,13 +388,13 @@ void SetAllRelays(char state){
 
 void PrintVersion(){
 
-  PRINTF("Version: ");
-  PRINTF(MMR_MAJOR_V);
-  PRINTF(".");
-  PRINTF(MMR_MINOR_V);
-  PRINTF(".");
-  PRINTF(MMR_REVISION_V);
-  PRINTF(".");
-  PRINTLN(MMR_BUILD_V);
+  LOGPRINTF("Version: ");
+  LOGPRINTF(MMR_MAJOR_V);
+  LOGPRINTF(".");
+  LOGPRINTF(MMR_MINOR_V);
+  LOGPRINTF(".");
+  LOGPRINTF(MMR_REVISION_V);
+  LOGPRINTF(".");
+  LOGPRINTLN(MMR_BUILD_V);
   
 }
