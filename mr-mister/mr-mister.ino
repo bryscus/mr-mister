@@ -27,11 +27,19 @@
 #define RELAY_ON    1
 #define RELAY_OFF   0
 
+#define TEST_TIME
+#define TEST_CHAN
+
 //Since console and relay control both use the UART,
 //pick only one of the two options below.  In order to
 //debug, uncomment PRINT.  To run, uncomment RELAY_CMD
-#define PRINT
-//#define RELAY_CMD
+#ifdef TEST_CHAN
+  #define PRINT
+#else
+  #define RELAY_CMD
+#endif
+
+//#define PRINT
 
 #ifdef PRINT
  #define PRINTF(x)  Serial.print (x)
@@ -65,7 +73,11 @@
 //// TO BE CONVERTED TO RUNTIME ////////////////////////
 
 #define CHAN_1_RUNLENGTH_S  10    //Length of spray
-#define CHAN_1_INTERVAL_S   60    //Interval to wait between sprays
+#define CHAN_1_INTERVAL_S   600   //Interval to wait between sprays
+#define CHAN_2_RUNSTART_S   -602  //Seconds before sunrise
+#define CHAN_2_RUNLENGTH_S  300   //Interval to wait between sprays
+#define CHAN_3_RUNSTART_S   -301  //Seconds before sunrise
+#define CHAN_3_RUNLENGTH_S  300   //Interval to wait between sprays
 
 ////////////////////////////////////////////////////////
 
@@ -138,8 +150,10 @@ tm *tm;
 uint32_t today_s;
 int sunrise_s, sunset_s;
 int this_day = -1;
-int runstart_s, starttime_s;
+int runstart1_s, starttime_s;
 bool chan_1_msg_flag = true, chan_1_time_flag = true;
+bool chan_2_msg_flag = true;
+bool chan_3_msg_flag = true;
 bool five_sec_flag = true;
 uint32_t five_sec_timer = 0;
 
@@ -178,16 +192,24 @@ void loop() {
 
     //If new boot, set to current time; else, sunrise + offset
     if(this_day == -1)
-      runstart_s = (uint32_t)now - (uint32_t)midnight;
+      #ifdef TEST_TIME
+        runstart1_s = starttime_s;
+      #else
+        runstart1_s = (uint32_t)now - (uint32_t)midnight;
+      #endif
     else
-      runstart_s = starttime_s;
-    PRINTF("---- Initial runstart_s :");
-    PRINTLN(runstart_s);
+      runstart1_s = starttime_s;
+    PRINTF("---- Initial runstart1_s :");
+    PRINTLN(runstart1_s);
     this_day = tm->tm_yday;
   }
 
   //Calculate the number of seconds so far today
+  #ifdef TEST_TIME
+  today_s = sunrise_s + CHAN_2_RUNSTART_S - 60 + millis()/1000;
+  #else
   today_s = (uint32_t)now - (uint32_t)midnight;
+  #endif
 
   //Print human readable time figures every 5 seconds
   if(five_sec_flag){
@@ -233,25 +255,69 @@ void loop() {
       PRINTLN(today_s);
     }
 
-    //Run solenoid during calculated period
-    if((today_s >= runstart_s) && (today_s < (runstart_s + CHAN_1_RUNLENGTH_S))){
+    //Run solenoid 1 during calculated period
+    if((today_s >= runstart1_s) && (today_s < (runstart1_s + CHAN_1_RUNLENGTH_S))){
       if(chan_1_msg_flag){
         chan_1_msg_flag = false;
-        PRINTF("---- Running: ");
+        PRINTF("---- CHAN_1: ON ");
         PRINTLN(today_s);
       }
       SetRelay(1, RELAY_ON);
     }
     else {
       //Calculate new start time for solenoid
-      if(today_s >= (runstart_s + CHAN_1_RUNLENGTH_S)){
+      if(today_s >= (runstart1_s + CHAN_1_RUNLENGTH_S)){
         chan_1_msg_flag = true;
         chan_1_time_flag = true;
-        runstart_s += CHAN_1_INTERVAL_S;
-        PRINTF("---- New runstart_s: ");
-        PRINTLN(runstart_s);
+        runstart1_s += CHAN_1_INTERVAL_S;
+        PRINTF("---- CHAN_1: OFF ");
+        PRINTLN(today_s);
+        PRINTF("---- CHAN_1 NEWSTART: ");
+        PRINTLN(runstart1_s);
       }
       SetRelay(1, RELAY_OFF);
+    }
+  }
+
+  //Run solenoid 2 during calculated period
+  if((today_s >= sunrise_s + CHAN_2_RUNSTART_S) && (today_s < (sunrise_s + CHAN_2_RUNSTART_S + CHAN_2_RUNLENGTH_S))){
+    if(chan_2_msg_flag){
+      chan_2_msg_flag = false;
+      PRINTF("---- CHAN_2: ON ");
+      PRINTLN(today_s);
+    }
+    SetRelay(2, RELAY_ON);
+  }
+  else {
+    //Calculate new start time for solenoid
+    if(today_s >= (sunrise_s + CHAN_2_RUNSTART_S + CHAN_2_RUNLENGTH_S)){
+      if(!chan_2_msg_flag){      
+        chan_2_msg_flag = true;
+        PRINTF("---- CHAN_2: OFF ");
+        PRINTLN(today_s);
+      }
+    SetRelay(2, RELAY_OFF);
+    }
+  }
+  
+  //Run solenoid 3 during calculated period
+  if((today_s >= sunrise_s + CHAN_3_RUNSTART_S) && (today_s < (sunrise_s + CHAN_3_RUNSTART_S + CHAN_3_RUNLENGTH_S))){
+    if(chan_3_msg_flag){
+      chan_3_msg_flag = false;
+      PRINTF("---- CHAN_3: ON ");
+      PRINTLN(today_s);
+    }
+    SetRelay(3, RELAY_ON);
+  }
+  else {
+    //Calculate new start time for solenoid
+    if(today_s >= (sunrise_s + CHAN_3_RUNSTART_S + CHAN_3_RUNLENGTH_S)){
+      if(!chan_3_msg_flag){      
+        chan_3_msg_flag = true;
+        PRINTF("---- CHAN_3: OFF ");
+        PRINTLN(today_s);
+      }
+    SetRelay(3, RELAY_OFF);
     }
   }
 
