@@ -16,8 +16,13 @@
   You should have received a copy of the GNU General Public License
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-
+//WiFi Libraries//
 #include <ESP8266WiFi.h>
+#include <ESP8266mDNS.h>
+#include <ESP8266WebServer.h>
+#include <WiFiClient.h>
+
+//Core Libraries//
 #include <time.h>                       // time() ctime()
 #include <sys/time.h>                   // struct timeval
 #include <coredecls.h>                  // settimeofday_cb()
@@ -64,6 +69,7 @@
 ////////////////////////////////////////////////////////
 //// ONE TIME CONFIGURATION PARAMETERS /////////////////
 
+#define HOST            "mrmister"
 #define SSID            "SSID"
 #define SSIDPWD         "Password"
 #define TZ              -5          // (utc+) TZ in hours
@@ -104,6 +110,9 @@ void time_is_set(void) {
   PRINTLN("------------------ settimeofday() was called ------------------");
 }
 
+ESP8266WebServer server(80);
+const char* serverIndex = "<form method='POST' action='/update' enctype='multipart/form-data'><input type='file' name='update'><input type='submit' value='Update'></form>";
+
 void setup() {
   
   Serial.begin(115200);
@@ -127,7 +136,48 @@ void setup() {
   PRINTF("IP address: ");
   PRINTLN(WiFi.localIP());
   PRINTLN("Setup done");
-  // don't wait, observe time changing when ntp timestamp is received
+  
+  ////////////////////////////////////////////////////////////////////////
+  ////////////////////////////////////////////////////////////////////////
+  MDNS.begin(HOST);
+  server.on("/", HTTP_GET, []() {
+    server.sendHeader("Connection", "close");
+    server.send(200, "text/html", serverIndex);
+  });
+  server.on("/update", HTTP_POST, []() {
+    server.sendHeader("Connection", "close");
+    server.send(200, "text/plain", (Update.hasError()) ? "FAIL" : "OK");
+    ESP.restart();
+  }, []() {
+    HTTPUpload& upload = server.upload();
+    if (upload.status == UPLOAD_FILE_START) {
+      Serial.setDebugOutput(true);
+      WiFiUDP::stopAll();
+      Serial.printf("Update: %s\n", upload.filename.c_str());
+      uint32_t maxSketchSpace = (ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000;
+      if (!Update.begin(maxSketchSpace)) { //start with max available size
+        Update.printError(Serial);
+      }
+    } else if (upload.status == UPLOAD_FILE_WRITE) {
+      if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+        Update.printError(Serial);
+      }
+    } else if (upload.status == UPLOAD_FILE_END) {
+      if (Update.end(true)) { //true to set the size to the current progress
+        Serial.printf("Update Success: %u\nRebooting...\n", upload.totalSize);
+      } else {
+        Update.printError(Serial);
+      }
+      Serial.setDebugOutput(false);
+    }
+    yield();
+  });
+  server.begin();
+  MDNS.addService("http", "tcp", 80);
+
+  Serial.printf("Ready! Open http://%s.local in your browser\n", HOST);
+  ////////////////////////////////////////////////////////////////////////
+  ////////////////////////////////////////////////////////////////////////
 
   telnetServer.begin();
   telnetServer.setNoDelay(true);
@@ -171,6 +221,8 @@ bool five_sec_flag = true;
 uint32_t five_sec_timer = 0;
 
 void loop() {
+  
+  server.handleClient();
 
   if (telnetServer.hasClient()) {
     if (!serverClient || !serverClient.connected()) {
