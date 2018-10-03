@@ -32,15 +32,14 @@
 #define RELAY_ON    1
 #define RELAY_OFF   0
 
-//#define TEST_TIME
-#define TEST_CHAN
+//#define TEST_TIME         //Sets time to just before sunrise of current day
 #define TCPPRINT
 
 //Since console and relay control both use the UART,
 //pick only one of the two options below.  In order to
 //debug, uncomment PRINT.  To run, uncomment RELAY_CMD
-//#define RELAY_CMD
-#define PRINT_SERIAL
+#define RELAY_CMD
+//#define PRINT_SERIAL
 
 #ifdef TCPPRINT
   #define LOGPRINTF(x)  serverClient.print (x)
@@ -82,7 +81,7 @@
 ////////////////////////////////////////////////////////
 //// TO BE CONVERTED TO RUNTIME ////////////////////////
 
-#define CHAN_1_RUNLENGTH_S  10    //Length of spray
+#define CHAN_1_RUNLENGTH_S  15    //Length of spray
 #define CHAN_1_INTERVAL_S   600   //Interval to wait between sprays
 #define CHAN_2_RUNSTART_S   -602  //Seconds before sunrise
 #define CHAN_2_RUNLENGTH_S  300   //Interval to wait between sprays
@@ -154,6 +153,8 @@ void setup() {
       Serial.setDebugOutput(true);
       WiFiUDP::stopAll();
       Serial.printf("Update: %s\n", upload.filename.c_str());
+      LOGPRINTF("Update:");
+      LOGPRINTLN(upload.filename.c_str());
       uint32_t maxSketchSpace = (ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000;
       if (!Update.begin(maxSketchSpace)) { //start with max available size
         Update.printError(Serial);
@@ -165,6 +166,7 @@ void setup() {
     } else if (upload.status == UPLOAD_FILE_END) {
       if (Update.end(true)) { //true to set the size to the current progress
         Serial.printf("Update Success: %u\nRebooting...\n", upload.totalSize);
+        LOGPRINTLN("Update Success");
       } else {
         Update.printError(Serial);
       }
@@ -217,8 +219,8 @@ int runstart1_s, starttime_s;
 bool chan_1_msg_flag = true, chan_1_time_flag = true;
 bool chan_2_msg_flag = true;
 bool chan_3_msg_flag = true;
-bool five_sec_flag = true;
-uint32_t five_sec_timer = 0;
+bool display_flag = true;
+uint32_t display_timer = 0;
 
 void loop() {
   
@@ -245,9 +247,9 @@ void loop() {
   tm = localtime(&now);
 
   //Create five second interval timer for display
-  if((uint32_t)now > five_sec_timer){
-    five_sec_flag = true;
-    five_sec_timer = (uint32_t)now + 15;
+  if((uint32_t)now > display_timer){
+    display_flag = true;
+    display_timer = (uint32_t)now + 60;
   }
   
   //Recalculate sunrise/sunset on new day
@@ -294,7 +296,7 @@ void loop() {
   #endif
 
   //Print human readable time figures every 5 seconds
-  if(five_sec_flag){
+  if(display_flag){
     tm = localtime(&now);
 
     LOGPRINTF("Today's:");
@@ -404,7 +406,7 @@ void loop() {
   }
 
   //Reset flag
-  five_sec_flag = false;
+  display_flag = false;
 }
 
 void SetRelay(char relay_num, char state){
